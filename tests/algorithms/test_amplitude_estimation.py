@@ -205,17 +205,32 @@ def test_resolve_good_states_enumerates_custom_predicate():
     assert qae._resolve_good_states(problem) == [0b10]
 
 
-def test_canonical_qae_rejects_oversized_state_register():
-    class _OversizedStatePreparation:
-        num_qubits = AmplitudeEstimation.MAX_ORACLE_QUBITS + 1
+class _OversizedStatePreparation:
+    num_qubits = AmplitudeEstimation.MAX_ORACLE_QUBITS + 1
 
+
+def test_canonical_qae_rejects_oversized_custom_predicate():
+    """Only a custom predicate needs enumerating, so only it is size limited."""
     problem = EstimationProblem(
-        state_preparation=_OversizedStatePreparation(), objective_qubits=[0]
+        state_preparation=_OversizedStatePreparation(),
+        objective_qubits=[0],
+        is_good_state=lambda bitstring: bitstring.count("1") == 1,
     )
     qae = AmplitudeEstimation(num_evaluation_qubits=3)
 
     with pytest.raises(ValueError, match="at most"):
         qae._resolve_good_states(problem)
+
+
+def test_canonical_qae_allows_oversized_default_marking():
+    """The default objective-qubit marking is emitted directly, so a large
+    state register must not be rejected and must not be enumerated."""
+    problem = EstimationProblem(
+        state_preparation=_OversizedStatePreparation(), objective_qubits=[0]
+    )
+    qae = AmplitudeEstimation(num_evaluation_qubits=3)
+
+    assert qae._resolve_good_states(problem) is None
 
 
 @pytest.mark.parametrize(
@@ -232,3 +247,24 @@ def test_canonical_qae_degenerate_good_state(is_good_state, expected_prob):
     estimated_prob = qae.estimate(problem, shots=4000, device_name="QpiAI-QSV-Local")
 
     assert abs(estimated_prob - expected_prob) < 0.05
+
+
+def test_good_state_reassignment_is_picked_up_by_the_circuit():
+    """Reassigning is_good_state must reach the oracle, not just the counting.
+
+    Otherwise the circuit and the final calculation would use different
+    definitions of a good state.
+    """
+    circuit = Circuit(2)
+    circuit.ry(0, 0.8)
+    circuit.ry(1, 1.1)
+    problem = EstimationProblem(state_preparation=circuit, objective_qubits=[0])
+    qae = AmplitudeEstimation(num_evaluation_qubits=3)
+
+    assert problem.has_custom_good_state is False
+    assert qae._resolve_good_states(problem) is None
+
+    problem.is_good_state = lambda bitstring: bitstring == "10"
+
+    assert problem.has_custom_good_state is True
+    assert qae._resolve_good_states(problem) == [0b10]

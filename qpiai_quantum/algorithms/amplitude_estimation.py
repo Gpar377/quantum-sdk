@@ -52,6 +52,7 @@ class EstimationProblem:
         self.state_preparation = state_preparation
         self.objective_qubits = objective_qubits
         self.is_good_state: Callable[[str], bool]
+        self._default_is_good_state: Callable[[str], bool] | None
         if is_good_state is None:
 
             def default_is_good_state(bitstring: str) -> bool:
@@ -65,12 +66,25 @@ class EstimationProblem:
                 return True
 
             self.is_good_state = default_is_good_state
+            self._default_is_good_state = default_is_good_state
         else:
             self.is_good_state = is_good_state
+            self._default_is_good_state = None
 
     @property
     def num_qubits(self) -> int:
         return self.state_preparation.num_qubits
+
+    @property
+    def has_custom_good_state(self) -> bool:
+        """
+        True when is_good_state is anything other than the default marking.
+
+        Compared by identity rather than recorded at construction time, so
+        reassigning is_good_state afterwards is still honoured by the circuit
+        rather than only by the result counting.
+        """
+        return self.is_good_state is not self._default_is_good_state
 
 
 class AmplitudeEstimation(QuantumAlgorithm):
@@ -84,11 +98,14 @@ class AmplitudeEstimation(QuantumAlgorithm):
 
     Custom ``is_good_state`` predicates are supported: the predicate is
     enumerated over the state register and synthesized into an explicit oracle
-    when it differs from the default all-objective-qubits-are-1 marking.
+    when it differs from the default all-objective-qubits-are-1 marking.  That
+    enumeration is bounded by ``MAX_ORACLE_QUBITS``; problems relying on the
+    default marking are unaffected by the bound.
     """
 
     # Upper bound on the state register for which an explicit oracle can be
     # synthesized from a custom is_good_state predicate (2^n enumeration).
+    # Only reached when a caller supplies their own predicate.
     MAX_ORACLE_QUBITS = 16
 
     def __init__(self, num_evaluation_qubits: int):
@@ -120,13 +137,21 @@ class AmplitudeEstimation(QuantumAlgorithm):
         default "every objective qubit is 1" rule, so the compact
         objective-qubit encoding can be used.  Otherwise returns the integer
         encoding of every marked basis state, where bit q is qubit q.
+
+        Only a caller-supplied predicate has to be enumerated, so the state
+        register size is bounded on that path alone; the default marking is
+        emitted directly on the objective qubits at any register size.
         """
+        if not problem.has_custom_good_state:
+            return None
+
         n = problem.num_qubits
         if n > self.MAX_ORACLE_QUBITS:
             raise ValueError(
-                f"Canonical amplitude estimation can synthesize an oracle for at "
-                f"most {self.MAX_ORACLE_QUBITS} state qubits, got {n}. Use "
-                f"IterativeAmplitudeEstimation for larger problems."
+                f"A custom is_good_state predicate can only be synthesized into "
+                f"an oracle for at most {self.MAX_ORACLE_QUBITS} state qubits, "
+                f"got {n}. Express the marked set through objective_qubits "
+                f"instead, which has no such limit."
             )
 
         objective_mask = 0
