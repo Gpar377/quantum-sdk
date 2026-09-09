@@ -213,10 +213,12 @@ amplitude = qae.estimate(problem, shots=1000, device_name="QpiAI-QSV-Local")
 print(f"Estimated amplitude: {amplitude:.4f}")  # true value: sin^2(0.4) = 0.1516
 ```
 
-A custom `is_good_state` predicate is honoured by both variants.  For
-`AmplitudeEstimation` the predicate is enumerated over the state register and
-synthesized into an explicit oracle, which is supported for up to
-`AmplitudeEstimation.MAX_ORACLE_QUBITS` state qubits:
+`AmplitudeEstimation` honours a custom `is_good_state` predicate: it is
+enumerated over the state register and synthesized into an explicit oracle.
+That enumeration is supported for up to `AmplitudeEstimation.MAX_ORACLE_QUBITS`
+state qubits; problems using the default `objective_qubits` marking have no
+such limit.  `IterativeAmplitudeEstimation` does not yet build its Grover
+operator from the predicate, so custom predicates are not supported there:
 
 ```python
 # Bitstrings are MSB first, so bitstring[-1] is qubit 0.
@@ -392,7 +394,7 @@ for n in [2, 3, 4, 5]:
 - **Complexity**: O(1/ε) queries vs O(1/ε²) classical Monte Carlo
 - **Use Cases**: Option pricing, risk analysis, counting problems
 - **Key Feature**: Quadratic speedup for estimating expectation values
-- **Note**: Only the iterative (maximum-likelihood) variant is currently implemented. The canonical QPE-based variant is planned.
+- **Note**: Both the canonical QPE-based variant (`AmplitudeEstimation`) and the iterative (maximum-likelihood) variant (`IterativeAmplitudeEstimation`) are implemented. Custom `is_good_state` predicates are currently supported by the canonical variant only.
 
 ## Performance Tips
 
